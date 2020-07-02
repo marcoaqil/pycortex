@@ -10,15 +10,34 @@ from .utils import make_flatmap_image
 from . import composite
 
 
+default_colorbar_locations = {
+    'left': (.0, .07, .2, .04),
+    'center': (.4, .07, .2, .04),
+    'right': (.7, .07, .2, .04)
+}
+
+
+def _check_colorbar_location(colorbar_location):
+    if isinstance(colorbar_location, (tuple, list)):
+        return colorbar_location
+
+    if colorbar_location not in default_colorbar_locations:
+        raise ValueError("colorbar_location must be one of {}".format(
+            list(default_colorbar_locations.keys())))
+
+    return default_colorbar_locations[colorbar_location]
+
+
 def make_figure(braindata, recache=False, pixelwise=True, thick=32, sampler='nearest',
                 height=1024, dpi=100, depth=0.5, with_rois=True, with_sulci=False,
                 with_labels=True, with_colorbar=True, with_borders=False,
                 with_dropout=False, with_curvature=False, extra_disp=None,
-                with_connected_vertices=False,
+                with_connected_vertices=False, overlay_file=None,
                 linewidth=None, linecolor=None, roifill=None, shadow=None,
                 labelsize=None, labelcolor=None, cutout=None, curvature_brightness=None,
                 curvature_contrast=None, curvature_threshold=None, fig=None, extra_hatch=None,
-                colorbar_ticks=None, colorbar_location=(.4, .07, .2, .04), **kwargs):
+                colorbar_ticks=None, colorbar_location='center', roi_list=None,
+                nanmean=False, **kwargs):
     """Show a Volume or Vertex on a flatmap with matplotlib.
 
     Note that **kwargs are ONLY present now for backward compatibility / warnings. No kwargs
@@ -86,10 +105,11 @@ def make_figure(braindata, recache=False, pixelwise=True, thick=32, sampler='nea
         layers to it.) Default value is None.
     extra_hatch : tuple, optional
         Optional extra crosshatch-textured layer, given as (DataView, [r, g, b]) tuple.
-    colorbar_location : tuple, optional
-        Location of the colorbar. The dimensions are
-        [left, bottom, width, height]. All quantities are in fractions of
-        figure width and height.
+    colorbar_location : str or tuple, optional
+        Location of the colorbar. Default locations are one of
+        'left', 'center', 'right' (default 'center').
+        Alternatively, a tuple with four floats between 0 and 1 can be passed
+        indicating (left, bottom, width, height).
     colorbar_ticks : array-like, optional
         For 1D colormaps indicates the ticks of the colorbar. If None,
         it defaults to equally spaced values between vmin and vmax.
@@ -97,6 +117,8 @@ def make_figure(braindata, recache=False, pixelwise=True, thick=32, sampler='nea
         vmin, vmax specified in the Volume2D object.
     fig : figure or ax
         figure into which to plot flatmap
+    nanmean : bool, optional (default = False)
+        If True, NaNs in the data will be ignored when averaging across layers.
     """
     from matplotlib import pyplot as plt
 
@@ -118,7 +140,7 @@ def make_figure(braindata, recache=False, pixelwise=True, thick=32, sampler='nea
 
     # Add data
     data_im, extents = composite.add_data(ax, dataview, pixelwise=pixelwise, thick=thick, sampler=sampler,
-                                          height=height, depth=depth, recache=recache)
+                                          height=height, depth=depth, recache=recache, nanmean=nanmean)
 
     layers = dict(data=data_im)
     # Add curvature
@@ -174,12 +196,14 @@ def make_figure(braindata, recache=False, pixelwise=True, thick=32, sampler='nea
     if with_rois:
         roi_im = composite.add_rois(ax, dataview, extents=extents, height=height, linewidth=linewidth, linecolor=linecolor,
                                     roifill=roifill, shadow=shadow, labelsize=labelsize, labelcolor=labelcolor,
-                                    with_labels=with_labels)
+                                    with_labels=with_labels, overlay_file=overlay_file,
+                                    roi_list=roi_list)
         layers['rois'] = roi_im
     # Add sulci
     if with_sulci:
         sulc_im = composite.add_sulci(ax, dataview, extents=extents, height=height, linewidth=linewidth, linecolor=linecolor,
-                                      shadow=shadow, labelsize=labelsize, labelcolor=labelcolor, with_labels=with_labels)
+                                      shadow=shadow, labelsize=labelsize, labelcolor=labelcolor, with_labels=with_labels,
+                                      overlay_file=overlay_file)
         layers['sulci'] = sulc_im
     # Add custom
     if extra_disp is not None:
@@ -205,6 +229,7 @@ def make_figure(braindata, recache=False, pixelwise=True, thick=32, sampler='nea
         extents = composite.add_cutout(ax, cutout, dataview, layers)
 
     if with_colorbar:
+        colorbar_location = _check_colorbar_location(colorbar_location)
         # Allow 2D colorbars:
         if isinstance(dataview, dataset.view2D.Dataview2D):
             colorbar_ticks = np.round([
@@ -294,7 +319,7 @@ def make_png(fname, braindata, recache=False, pixelwise=True, sampler='nearest',
     plt.close(fig)
 
 def make_svg(fname, braindata, with_labels=False, with_curvature=True, layers=['rois'],
-             height=1024, **kwargs):
+             height=1024, overlay_file=None, **kwargs):
     """Save an svg file of the desired flatmap.
 
     This function creates an SVG file with vector graphic ROIs overlaid on a single png image.
@@ -315,6 +340,8 @@ def make_svg(fname, braindata, with_labels=False, with_curvature=True, layers=['
         List of layer names to show
     height : int
         Height of PNG in pixels
+    overlay_file : str
+    	Custom ROI overlays file to use
 
     """
     fp = io.BytesIO()
@@ -346,7 +373,7 @@ def make_svg(fname, braindata, with_labels=False, with_curvature=True, layers=['
         image_data = [binascii.b2a_base64(fpc.read()), pngdata]
 
     ## Create and save SVG file
-    roipack = utils.get_roipack(braindata.subject)
+    roipack = utils.db.get_overlay(braindata.subject, overlay_file)
     roipack.get_svg(fname, layers=layers, labels=with_labels, with_ims=image_data)
 
 

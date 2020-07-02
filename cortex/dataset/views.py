@@ -214,6 +214,7 @@ class Dataview(object):
         cmapper = cm.ScalarMappable(norm=norm, cmap=cmap)
         color_data = cmapper.to_rgba(self.data.flatten()).reshape(self.data.shape+(4,))
         # rollaxis puts the last color dimension first, to allow output of separate channels: r,g,b,a = dataset.raw
+        color_data = (np.clip(color_data, 0, 1) * 255).astype(np.uint8)
         return np.rollaxis(color_data, -1)
 
 class Multiview(Dataview):
@@ -356,6 +357,8 @@ class Vertex(VertexData, Dataview):
         # Input check
         if hemi not in ['lh', 'rh', 'both']:
             raise ValueError("`hemi` kwarg must be 'lh', 'rh', or 'both'")
+        # lazy load
+        from ..database import db
         mats = db.get_mri_surf2surf_matrix(self.subject, surface_type, 
                 hemi='both', target_subj=target_subj, fs_subj=fs_subj, 
                 **kwargs)
@@ -376,5 +379,5 @@ def u(s, encoding='utf8'):
         return s
 
 
-from .viewRGB import VolumeRGB, VertexRGB
+from .viewRGB import VolumeRGB, VertexRGB, Colors
 from .view2D import Volume2D, Vertex2D

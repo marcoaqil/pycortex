@@ -9,11 +9,15 @@ import numpy as np
 import subprocess as sp
 from matplotlib.path import Path
 from scipy.spatial import cKDTree
+from builtins import zip, str
+
+from distutils.version import LooseVersion
 
 from lxml import etree
 from lxml.builder import E
 
 from .options import config
+from .testing_utils import INKSCAPE_VERSION
 
 svgns = "http://www.w3.org/2000/svg"
 inkns = "http://www.inkscape.org/namespaces/inkscape"
@@ -150,10 +154,10 @@ class SVGOverlay(object):
                 with_ims = zip(range(len(with_ims)), with_ims)
 
             datalayer = _make_layer(outsvg.getroot(), "data")
-            for imnum,im in reversed(with_ims):
+            for imnum, im in reversed(list(with_ims)):  # need list() with zip for python 3.5 compatibility
                 imlayer = _make_layer(datalayer, "image_%d" % imnum)
                 img = E.image(
-                    {"{http://www.w3.org/1999/xlink}href":"data:image/png;base64,%s"%im},
+                    {"{http://www.w3.org/1999/xlink}href":"data:image/png;base64,%s"%str(im,'utf-8')},
                     id="image_%d"%imnum, x="0", y="0",
                     width=str(self.svgshape[0]),
                     height=str(self.svgshape[1]),
@@ -232,6 +236,10 @@ class SVGOverlay(object):
         if height is None:
             height = self.svgshape[1]
         #label_defaults = _parse_defaults(layer+'_labels')
+        
+        # separate kwargs starting with "label-"
+        label_kwargs = {k[6:]:v for k, v in kwargs.items() if k[:6] == "label-"}
+        kwargs = {k:v for k, v in kwargs.items() if k[:6] != "label-"}
 
         for layer in self:
             if layer.name==layer_name:
@@ -245,6 +253,7 @@ class SVGOverlay(object):
                         # do not have individually settable visibility / style params
                         tmp_style = copy.deepcopy(layer.labels.text_style)
                         tmp_style['fill-opacity'] = '1' if shape_.visible else '0'
+                        tmp_style.update(label_kwargs)
                         tmp_style_str = ';'.join(['%s:%s'%(k,v) for k, v in tmp_style.items() if v != 'None'])
                         for i in range(len(layer.labels.elements[name_])):
                             layer.labels.elements[name_][i].set('style', tmp_style_str)
@@ -259,7 +268,11 @@ class SVGOverlay(object):
             pngfile = png.name
 
         inkscape_cmd = config.get('dependency_paths', 'inkscape')
-        cmd = "{inkscape_cmd} -z -h {height} -e {outfile} /dev/stdin"
+        if LooseVersion(INKSCAPE_VERSION) < LooseVersion('1.0'):
+            cmd = "{inkscape_cmd} -z -h {height} -e {outfile} /dev/stdin"
+        else:
+            cmd = "{inkscape_cmd} -h {height} --export-filename {outfile} " \
+                  "/dev/stdin"
         cmd = cmd.format(inkscape_cmd=inkscape_cmd, height=height, outfile=pngfile)
         proc = sp.Popen(shlex.split(cmd), stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
         stdout, stderr = proc.communicate(etree.tostring(self.svg))
@@ -654,12 +667,20 @@ def get_overlay(subject, svgfile, pts, polys, remove_medial=False,
         import binascii
 
         # Curvature
-        curv = db.get_surfinfo(subject, 'curvature')
-        curv.cmap = 'gray'
-        fp = io.BytesIO()
-        quickflat.make_png(fp, curv, height=1024, with_rois=False, with_labels=False)
-        fp.seek(0)
-        svg.rois.add_shape('curvature', binascii.b2a_base64(fp.read()).decode('utf-8'), False)
+        for layer_name, cmap in zip(['curvature', 'sulcaldepth', 'thickness'], ['gray', 'RdBu_r', 'viridis']):
+            try:
+                curv = db.get_surfinfo(subject, layer_name)
+            except:
+                print("Failed to import svg layer for %s, continuing"%layer_name)
+                continue
+            curv.cmap = cmap
+            vmax = np.abs(curv.data).max()
+            curv.vmin = -vmax
+            curv.vmax = vmax
+            fp = io.BytesIO()
+            quickflat.make_png(fp, curv, height=1024, with_rois=False, with_labels=False)
+            fp.seek(0)
+            svg.rois.add_shape(layer_name, binascii.b2a_base64(fp.read()).decode('utf-8'), False)
 
     else:
         svg = SVGOverlay(svgfile, 

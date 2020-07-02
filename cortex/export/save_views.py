@@ -106,7 +106,7 @@ def save_3d_views(volume, base_name='fig', list_angles=['lateral_pivot'],
         # Wait for browser to dump file, before applying new view parameters
         while not os.path.exists(file_name):
             pass
-        time.sleep(0.1)
+        time.sleep(1)
 
         # Trim white edges
         if trim:
@@ -193,6 +193,9 @@ angle_view_params = {
 unfold_view_params = {
     'fiducial': {
         'surface.{subject}.unfold': 0,
+    },
+    'inflated_less': {
+        'surface.{subject}.unfold': 0.25,
     },
     'inflated': {
         'surface.{subject}.unfold': 0.5,
