@@ -172,11 +172,11 @@ def import_subj(fs_subject, cx_subject=None, freesurfer_subject_dir=None, whitem
     # Create and/or replace extant subject. Throws a warning that this will happen.
     database.db.make_subj(cx_subject)
 
-
-    import nibabel
+    import nibabel as nb
     surfs = os.path.join(database.default_filestore, cx_subject, "surfaces", "{name}_{hemi}.gii")
     anats = os.path.join(database.default_filestore, cx_subject, "anatomicals", "{name}.nii.gz")
     surfinfo = os.path.join(database.default_filestore, cx_subject, "surface-info", "{name}.npz")
+
     if freesurfer_subject_dir is None:
         freesurfer_subject_dir = os.environ['SUBJECTS_DIR']
     fspath = os.path.join(freesurfer_subject_dir, fs_subject, 'mri')
@@ -200,9 +200,25 @@ def import_subj(fs_subject, cx_subject=None, freesurfer_subject_dir=None, whitem
     from . import formats
     for fsname, name in [(whitematter_surf, "wm"), ('pial', "pia"), ('inflated', "inflated")]:
         for hemi in ("lh", "rh"):
-            pts, polys, _ = get_surf(fs_subject, hemi, fsname, freesurfer_subject_dir=freesurfer_subject_dir)
+
             fname = str(surfs.format(subj=cx_subject, name=name, hemi=hemi))
-            formats.write_gii(fname, pts=pts + surfmove, polys=polys)
+            path = get_paths(cx_subject, hemi, 'surf', freesurfer_subject_dir=freesurfer_subject_dir)
+            path = path.format(name=fsname)
+            cmd = "mris_convert {path} {fname}".format(path=path, fname=fname)
+            print('Running {}'.format(cmd))
+            sp.call(shlex.split(cmd))
+            img = nb.load(fname)
+            pointset = img.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0]
+            c_ras_keys = ('VolGeomC_R', 'VolGeomC_A', 'VolGeomC_S')
+            ras = np.array([[float(pointset.metadata[key])]
+                            for key in c_ras_keys])
+            pointset.data = (pointset.data + ras.T).astype(pointset.data.dtype)
+            for nvpair in pointset.meta.data:
+                if nvpair.name in c_ras_keys:
+                    nvpair.value = '0.000000'
+
+            img.to_filename(fname)
+
 
     for curv, info in dict(sulc="sulcaldepth", thickness="thickness", curv="curvature").items():
         lh, rh = [parse_curv(curvs.format(hemi=hemi, name=curv)) for hemi in ['lh', 'rh']]
