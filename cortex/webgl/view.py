@@ -356,7 +356,7 @@ def show(data, types=("inflated", ), recache=False, cmap='RdBu_r', layout=None,
             my_viewopts[sec] = dict(options.config.items(sec))
 
     if pickerfun is None:
-        pickerfun = lambda a, b: None
+        pickerfun = lambda a, b, c: None
 
     class CTMHandler(web.RequestHandler):
         def get(self, path):
@@ -792,7 +792,7 @@ def show(data, types=("inflated", ), recache=False, cmap='RdBu_r', layout=None,
 
     class PickerHandler(web.RequestHandler):
         def get(self):
-            pickerfun(int(self.get_argument("voxel")), int(self.get_argument("vertex")))
+            pickerfun(self.get_argument("voxel"), self.get_argument("hemi"), self.get_argument("vertex"))
 
     class WebApp(serve.WebApp):
         disconnect_on_close = autoclose
@@ -818,7 +818,7 @@ def show(data, types=("inflated", ), recache=False, cmap='RdBu_r', layout=None,
 
     server.start()
     print("Started server on port %d"%server.port)
-    url = "http://%s:%d/mixer.html"%(serve.hostname, server.port)
+    url = "http://localhost:%d/mixer.html"%(server.port)
     if open_browser:
         webbrowser.open(url)
         client = server.get_client()

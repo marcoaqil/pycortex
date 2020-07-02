@@ -164,7 +164,7 @@ def import_subj(subject, sname=None, freesurfer_subject_dir=None, whitematter_su
         sname = subject
     database.db.make_subj(sname)
 
-    import nibabel
+    import nibabel as nb
     surfs = os.path.join(database.default_filestore, sname, "surfaces", "{name}_{hemi}.gii")
     anats = os.path.join(database.default_filestore, sname, "anatomicals", "{name}.nii.gz")
     surfinfo = os.path.join(database.default_filestore, sname, "surface-info", "{name}.npz")
@@ -183,17 +183,30 @@ def import_subj(subject, sname=None, freesurfer_subject_dir=None, whitematter_su
     # Make the fiducial files. Just make them.
     make_fiducial(subject, freesurfer_subject_dir=freesurfer_subject_dir)
 
-    # Freesurfer uses FOV/2 for center, let's set the surfaces to use the
-    # magnet isocenter
-    trans = nibabel.load(out).get_affine()[:3, -1]
-    surfmove = trans - np.sign(trans) * [128, 128, 128]
+    #Freesurfer uses FOV/2 for center, let's set the surfaces to use the magnet isocenter
+    anat_ref = nb.load(out)
+    trans = anat_ref.affine[:3, -1]
 
     from . import formats
     for fsname, name in [(whitematter_surf, "wm"), ('pial', "pia"), ('inflated', "inflated")]:
         for hemi in ("lh", "rh"):
-            pts, polys, _ = get_surf(subject, hemi, fsname, freesurfer_subject_dir=freesurfer_subject_dir)
             fname = str(surfs.format(subj=sname, name=name, hemi=hemi))
-            formats.write_gii(fname, pts=pts + surfmove, polys=polys)
+            path = get_paths(sname, hemi, 'surf', freesurfer_subject_dir=freesurfer_subject_dir)
+            path = path.format(name=fsname)
+            cmd = "mris_convert {path} {fname}".format(path=path, fname=fname)
+            print('Running {}'.format(cmd))
+            sp.call(shlex.split(cmd))
+            img = nb.load(fname)
+            pointset = img.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0]
+            c_ras_keys = ('VolGeomC_R', 'VolGeomC_A', 'VolGeomC_S')
+            ras = np.array([[float(pointset.metadata[key])]
+                            for key in c_ras_keys])
+            pointset.data = (pointset.data + ras.T).astype(pointset.data.dtype)
+            for nvpair in pointset.meta.data:
+                if nvpair.name in c_ras_keys:
+                    nvpair.value = '0.000000'
+
+            img.to_filename(fname)
 
     for curv, info in dict(sulc="sulcaldepth", thickness="thickness", curv="curvature").items():
         lh, rh = [parse_curv(curvs.format(hemi=hemi, name=curv)) for hemi in ['lh', 'rh']]
@@ -502,7 +515,7 @@ def _parse_labels(label_files, subject):
     values = np.hstack(values)
     return verts, values
 
-def get_label(subject, label, fs_subject=None, fs_dir=None, src_subject='fsaverage', hemisphere=('lh', 'rh'), **kwargs):
+def get_label(subject, label, fs_subject=None, fs_dir=None, src_subject='fsaverage', hemisphere=('lh', 'rh'), verbose=False, **kwargs):
     """Get data from a label file for fsaverage subject
 
     Parameters
@@ -529,9 +542,11 @@ def get_label(subject, label, fs_subject=None, fs_dir=None, src_subject='fsavera
     label_files = [os.path.join(fs_dir, fs_subject, 'label', '{}.{}.label'.format(h, label)) for h in hemisphere]
     if subject not in ['fsaverage', 'MNI', 'fsaverage_pycortex']:
         # If label file doesn't exist, try to move it there
-        print('looking for {}'.format(label_files))
+        if verbose:
+            print('looking for {}'.format(label_files))
         if not all([os.path.exists(f) for f in label_files]):
-            print("Transforming label file to subject's freesurfer directory...")
+            if verbose:
+                print("Transforming label file to subject's freesurfer directory...")
             _move_labels(fs_subject, label, hemisphere=hemisphere, fs_dir=fs_dir, src_subject=src_subject)
     verts, values = _parse_labels(label_files, subject)
     idx = verts.astype(np.int)

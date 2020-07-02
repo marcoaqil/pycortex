@@ -261,7 +261,7 @@ class Transform(object):
         # Read vox2ras transform for the anatomical volume
         try:
             cmd = ('mri_info', '--vox2ras', anat_mgz)
-            L = decode(subprocess.check_output(cmd)).splitlines()
+            L = decode(subprocess.check_output(cmd)).splitlines()[1:]
             anat_vox2ras = np.array([[np.float(s) for s in ll.split() if s] for ll in L])
         except OSError:
             print ("Error occured while executing:\n{}".format(' '.join(cmd)))

@@ -233,7 +233,10 @@ PickPosition.prototype = {
     					Math.round(vec_float.z));
                 var idx = this.revIndex[p.hemi][p.ptidx];
                 console.log("Picked vertex "+idx+" (orig "+p.ptidx+") in "+p.hemi+" hemisphere, voxel=["+vec.x+","+vec.y+","+vec.z+"]");
-    	    this.process_pick(vec, p.hemi, p.ptidx, keep);
+        //addmarker wants p.ptidx index
+        this.addMarker(p.hemi, p.ptidx, keep);
+        //process pick wants idx (for python conversion)
+    	    this.process_pick(vec, p.hemi, idx, keep);    	    
             return {'vertex': idx, 'voxel': vec}
     	}
     	else {
@@ -243,9 +246,13 @@ PickPosition.prototype = {
     },
     
     process_pick: function(vec, hemi, ptidx, keep) {
-        this.addMarker(hemi, ptidx, keep);
-        if (this.callback !== undefined)
+        
+        if (this.callback !== undefined) {
             this.callback(vec, hemi, ptidx);
+        }
+        else {
+            	$.ajax("/picker?voxel="+vec+"&hemi="+hemi+"&vertex="+ptidx);
+        }
     },
 
     process_nonpick: function() {

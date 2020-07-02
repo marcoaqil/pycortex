@@ -311,6 +311,7 @@ def read_pack(ctmfile):
             tf = tempfile.NamedTemporaryFile()
             tf.write(ctmfp.read(end-start))
             tf.seek(0)
+            tf.name = bytes(tf.name, 'ascii')
             ctm = CTMfile(tf.name, "r")
             pts, polys, norms = ctm.getMesh()
             meshes.append((pts, polys))

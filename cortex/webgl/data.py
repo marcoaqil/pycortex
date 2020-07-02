@@ -68,7 +68,9 @@ class Package(object):
         indices = dict((k, np.load(os.path.splitext(v)[0]+".npz")) for k, v in subjects.items())
         for brain in self.uniques:
             if isinstance(brain, (dataset.Vertex, dataset.VertexRGB)):
+
                 data = np.array(self.images[brain.name])[0]
+
                 npyform = BytesIO()
                 if self.brains[brain.name]['raw']:
                     data = data[..., indices[brain.subject]['index'], :]
@@ -76,6 +78,8 @@ class Package(object):
                     data = data[..., indices[brain.subject]['index']]
                 np.save(npyform, np.ascontiguousarray(data))
                 npyform.seek(0)
+                #this line below here is what causes the bug. or better, the unique method
+                #giving the same name to two different images
                 self.images[brain.name] = [npyform.read()]
         for npz in indices.values():
             npz.close()
